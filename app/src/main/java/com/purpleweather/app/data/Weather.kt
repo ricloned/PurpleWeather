@@ -36,7 +36,10 @@ data class Current(
     val wind: Double, val windDir: Int, val gusts: Double, val pressure: Double, val clouds: Int, val precip: Double
 )
 
-data class Hour(val time: String, val temp: Double, val code: Int, val isDay: Boolean, val pop: Int)
+data class Hour(
+    val time: String, val temp: Double, val code: Int, val isDay: Boolean, val pop: Int,
+    val precip: Double = 0.0, val wind: Double = 0.0, val humidity: Int = 0, val feels: Double = Double.NaN
+)
 
 data class Day(
     val date: String, val code: Int, val max: Double, val min: Double,
@@ -47,6 +50,8 @@ data class Forecast(
     val current: Current,
     val hours: List<Hour>,
     val days: List<Day>,
+    /** Все часы на 10 дней — для экрана дня. */
+    val allHours: List<Hour>,
     val timezone: String,
     val utcOffset: Int,
     val fetchedAt: Long
@@ -137,7 +142,7 @@ object WeatherApi {
         val url = "https://api.open-meteo.com/v1/forecast?latitude=${f(lat)}&longitude=${f(lon)}" +
             "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code," +
             "cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
-            "&hourly=temperature_2m,precipitation_probability,weather_code,is_day" +
+            "&hourly=temperature_2m,precipitation_probability,weather_code,is_day,precipitation,wind_speed_10m,relative_humidity_2m,apparent_temperature" +
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max," +
             "precipitation_probability_max,precipitation_sum,wind_speed_10m_max" +
             "&timezone=auto&forecast_days=10&wind_speed_unit=ms"
@@ -163,15 +168,18 @@ object WeatherApi {
         val curTime = c.optString("time")
         val h = o.getJSONObject("hourly")
         val ht = h.getJSONArray("time")
-        val hours = ArrayList<Hour>()
-        var start = 0
-        for (i in 0 until ht.length()) if (ht.getString(i) <= curTime) start = i
-        for (i in start until minOf(ht.length(), start + 25)) {
-            hours += Hour(
-                ht.getString(i), h.getJSONArray("temperature_2m").optDouble(i), h.getJSONArray("weather_code").optInt(i),
-                h.getJSONArray("is_day").optInt(i, 1) == 1, h.getJSONArray("precipitation_probability").optInt(i)
+        fun ha(k: String): JSONArray? = h.optJSONArray(k)
+        val all = (0 until ht.length()).map { i ->
+            Hour(
+                ht.getString(i), ha("temperature_2m")?.optDouble(i) ?: Double.NaN, ha("weather_code")?.optInt(i) ?: 0,
+                (ha("is_day")?.optInt(i, 1) ?: 1) == 1, ha("precipitation_probability")?.optInt(i) ?: 0,
+                ha("precipitation")?.optDouble(i, 0.0) ?: 0.0, ha("wind_speed_10m")?.optDouble(i, 0.0) ?: 0.0,
+                ha("relative_humidity_2m")?.optInt(i) ?: 0, ha("apparent_temperature")?.optDouble(i) ?: Double.NaN
             )
         }
+        var start = 0
+        for (i in all.indices) if (all[i].time <= curTime) start = i
+        val hours = all.subList(start, minOf(all.size, start + 25)).toList()
         val d = o.getJSONObject("daily")
         val dt = d.getJSONArray("time")
         fun arr(k: String): JSONArray = d.getJSONArray(k)
@@ -183,6 +191,6 @@ object WeatherApi {
                 arr("precipitation_sum").optDouble(i), arr("wind_speed_10m_max").optDouble(i)
             )
         }
-        return Forecast(cur, hours, days, o.optString("timezone"), o.optInt("utc_offset_seconds"), fetchedAt)
+        return Forecast(cur, hours, days, all, o.optString("timezone"), o.optInt("utc_offset_seconds"), fetchedAt)
     }
 }

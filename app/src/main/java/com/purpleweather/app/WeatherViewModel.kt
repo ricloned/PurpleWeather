@@ -30,7 +30,7 @@ import org.json.JSONArray
 import java.io.File
 import java.util.Locale
 
-enum class Screen { MAIN, SEARCH, SETTINGS }
+enum class Screen { MAIN, SEARCH, SETTINGS, DAY }
 enum class UpdateState { IDLE, CHECKING, AVAILABLE, DOWNLOADING, READY, NONE, ERROR }
 
 class WeatherViewModel(app: Application) : AndroidViewModel(app) {
@@ -52,6 +52,82 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var autoUpdate by mutableStateOf(sp.getBoolean("autoUpdate", true))
         private set
+
+    // ---------------- темы и сюрпризы ----------------
+
+    var themeId by mutableStateOf(sp.getString("theme", "violet") ?: "violet")
+        private set
+    var randomTheme by mutableStateOf(sp.getBoolean("randomTheme", true))
+        private set
+    /** Случайное «зерно» запуска: фон, приветствие и фраза дня каждый раз другие. */
+    val seed = kotlin.random.Random.nextInt()
+    /** Выбранный день (индекс в прогнозе) для почасового прогноза и экрана дня. */
+    var selectedDay by mutableIntStateOf(0)
+    var disco by mutableStateOf(false)
+    var snowFx by mutableStateOf(false)
+    var cat by mutableStateOf(false)
+    var confetti by mutableIntStateOf(0)
+        private set
+    var tempTaps = 0
+
+    fun applyTheme() {
+        val id = if (randomTheme) {
+            val pool = com.purpleweather.app.ui.Palettes.all.map { it.id }
+            // каждый запуск — новая тема (но не та же, что в прошлый раз)
+            val last = sp.getString("lastTheme", null)
+            val pick = pool.filter { it != last }.random(kotlin.random.Random(seed))
+            sp.edit().putString("lastTheme", pick).apply()
+            pick
+        } else themeId
+        com.purpleweather.app.ui.Pal.state.value = com.purpleweather.app.ui.Palettes.byId(id)
+    }
+
+    fun chooseTheme(id: String) {
+        themeId = id
+        sp.edit().putString("theme", id).apply()
+        com.purpleweather.app.ui.Pal.state.value = com.purpleweather.app.ui.Palettes.byId(id)
+    }
+
+    fun changeRandomTheme(v: Boolean) {
+        randomTheme = v
+        sp.edit().putBoolean("randomTheme", v).apply()
+        if (!v) chooseTheme(themeId)
+    }
+
+    fun boom() { confetti++ }
+
+    fun onTempTap() {
+        tempTaps++
+        if (tempTaps >= 7) {
+            tempTaps = 0
+            disco = !disco
+            message = if (disco) "🪩 Диско-режим включён!" else "Диско-режим выключен"
+            if (disco) boom()
+        }
+    }
+
+    fun openDay(i: Int) {
+        selectedDay = i
+        screen = Screen.DAY
+    }
+
+    /** Секретные слова в поиске. true — слово сработало. */
+    private fun easterEgg(q: String): Boolean {
+        val w = q.trim().lowercase()
+        when (w) {
+            "радуга", "rainbow" -> { com.purpleweather.app.ui.Pal.state.value = com.purpleweather.app.ui.Palettes.RAINBOW; message = "🌈 Радужная тема!" }
+            "диско", "disco" -> { disco = true; boom(); message = "🪩 Диско!" }
+            "снег", "snow", "let it snow" -> { snowFx = !snowFx; message = if (snowFx) "❄ Пусть идёт снег" else "Снег остановлен" }
+            "котик", "кот", "cat" -> { cat = !cat; message = if (cat) "🐱 Котик теперь живёт на облаке" else "Котик ушёл гулять" }
+            "42" -> message = "Ответ на главный вопрос жизни, вселенной и погоды: +42°. Но это не точно."
+            "конфетти", "ура", "праздник" -> { boom(); message = "🎉" }
+            else -> return false
+        }
+        screen = Screen.MAIN
+        query = ""
+        results = emptyList()
+        return true
+    }
 
     // поиск
     var query by mutableStateOf("")
@@ -144,6 +220,12 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAll() = cities.forEach { refresh(it, force = true) }
 
     // ---------------- поиск ----------------
+
+    /** Кнопка «Найти» на клавиатуре: проверяем секретные слова. */
+    fun submit() {
+        if (easterEgg(query)) return
+        onQuery(query)
+    }
 
     fun onQuery(q: String) {
         query = q
@@ -267,6 +349,7 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
 
     // init в конце: к этому моменту все поля уже созданы
     init {
+        applyTheme()
         cities.forEach { c -> loadCached(c); refresh(c, force = false) }
         if (autoUpdate) checkUpdate(silent = true)
     }
