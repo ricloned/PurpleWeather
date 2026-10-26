@@ -480,7 +480,7 @@ private fun SettingsScreen(vm: WeatherViewModel) {
         Spacer(Modifier.height(16.dp))
         Glass(Modifier.fillMaxWidth()) {
             Column {
-                Toggle("Градусы Фаренгейта", vm.fahrenheit, "°F вместо °C") { vm.setFahrenheit(it) }
+                Toggle("Градусы Фаренгейта", vm.fahrenheit, "°F вместо °C") { vm.changeFahrenheit(it) }
                 Toggle("3D-наклон", vm.tilt, "карточки и иконки поворачиваются вслед за телефоном") { vm.setTiltOn(it) }
                 Toggle("Проверять обновления", vm.autoUpdate, "при запуске смотреть новый релиз на GitHub") { vm.setAutoUpdateOn(it) }
             }

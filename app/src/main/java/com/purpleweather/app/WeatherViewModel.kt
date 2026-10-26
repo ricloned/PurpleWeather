@@ -206,7 +206,7 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------- настройки ----------------
 
-    fun setFahrenheit(v: Boolean) { fahrenheit = v; sp.edit().putBoolean("fahrenheit", v).apply() }
+    fun changeFahrenheit(v: Boolean) { fahrenheit = v; sp.edit().putBoolean("fahrenheit", v).apply() }
     fun setTiltOn(v: Boolean) { tilt = v; sp.edit().putBoolean("tilt", v).apply() }
     fun setAutoUpdateOn(v: Boolean) { autoUpdate = v; sp.edit().putBoolean("autoUpdate", v).apply() }
 
