@@ -99,7 +99,8 @@ object GlassStyle {
 
 /** Где на экране сейчас лежат панели — по ним прыгает котик. */
 object Blocks {
-    val rects = mutableStateMapOf<Any, Rect>()
+    // обычная карта, не состояние Compose: обновляется при прокрутке и не должна вызывать перерисовок
+    val rects = HashMap<Any, Rect>()
 }
 
 fun Modifier.catBlock(): Modifier = composed {

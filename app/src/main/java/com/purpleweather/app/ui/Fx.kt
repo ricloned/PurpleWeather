@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -103,11 +104,9 @@ fun phrase(sky: Sky, temp: Double, seed: Int): String {
 /** Фон: градиент темы, «туманности», объёмные сферы (каждый запуск — другие), звёзды, сезонные сюрпризы. */
 @Composable
 fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean, falling: Boolean = true) {
-    val tr = rememberInfiniteTransition(label = "bg")
-    val a by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(18000, easing = LinearEasing), RepeatMode.Reverse), label = "a")
-    val slow by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(40000, easing = LinearEasing)), label = "slow")
-    val fall by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "fall")
-    val tw by tr.animateFloat(0.3f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "tw")
+    // одни монотонные часы вместо нескольких бесконечных анимаций: нет рывков при сбросе цикла
+    val clock = rememberClock(true)
+    val emojiPaint = remember { android.graphics.Paint().apply { textAlign = android.graphics.Paint.Align.CENTER } }
     val tilt = LocalTilt.current
     val rnd = remember(seed) { Random(seed) }
     val stars = remember(seed) { List(80) { Triple(rnd.nextFloat(), rnd.nextFloat() * 0.7f, rnd.nextFloat()) } }
@@ -127,6 +126,10 @@ fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean, falling: Boolea
         else -> pal.top
     }
     Canvas(Modifier.fillMaxSize()) {
+        val time = clock.value
+        val a = 0.5f + 0.5f * sin(time * 2f * PI.toFloat() / 36f)
+        val slow = time / 40f
+        val fall = time / 9f
         drawRect(Brush.verticalGradient(listOf(top, pal.mid, pal.bottom)))
         val t = tilt.value
         val px = t.x * size.width * 0.03f
@@ -137,13 +140,14 @@ fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean, falling: Boolea
         blob(size.width * (0.9f - 0.15f * a) + px * 1.5f, size.height * 0.45f, size.width * 0.6f, pal.blob2.copy(alpha = 0.18f))
         blob(size.width * 0.5f - px, size.height * (0.86f - 0.05f * a), size.width * 0.85f, pal.blob3.copy(alpha = 0.35f))
         if (!day) for ((x, y, b) in stars) {
-            drawCircle(Color.White.copy(alpha = (0.3f + 0.7f * b) * (if (b > 0.5f) tw else 1f)), 1.1f + 1.7f * b,
+            val tw = if (b > 0.5f) 0.65f + 0.35f * sin(time * (1.5f + b * 2f) + x * 40f) else 1f
+            drawCircle(Color.White.copy(alpha = (0.3f + 0.7f * b) * tw), 1.1f + 1.7f * b,
                 Offset(x * size.width + px * 0.5f, y * size.height + py * 0.5f))
         }
         for (o in orbs) orb(o, slow, px, py)
         if (falling) when (season) {
-            Season.HALLOWEEN -> emojiRain(listOf("🎃", "🦇", "👻"), flakes, fall, 26f)
-            Season.VALENTINE -> emojiRain(listOf("💜", "💖", "💘"), flakes, fall, 22f)
+            Season.HALLOWEEN -> emojiRain(emojiPaint, listOf("🎃", "🦇", "👻"), flakes, fall, 26f)
+            Season.VALENTINE -> emojiRain(emojiPaint, listOf("💜", "💖", "💘"), flakes, fall, 22f)
             Season.NEW_YEAR -> snowfall(flakes, fall, px)
             Season.NONE -> {}
         }
@@ -193,8 +197,7 @@ private fun DrawScope.snowfall(flakes: List<Triple<Float, Float, Float>>, fall: 
     }
 }
 
-private fun DrawScope.emojiRain(list: List<String>, flakes: List<Triple<Float, Float, Float>>, fall: Float, sizeDp: Float) {
-    val paint = android.graphics.Paint().apply { textAlign = android.graphics.Paint.Align.CENTER }
+private fun DrawScope.emojiRain(paint: android.graphics.Paint, list: List<String>, flakes: List<Triple<Float, Float, Float>>, fall: Float, sizeDp: Float) {
     flakes.take(12).forEachIndexed { k, (x, y, s) ->
         val yy = ((y + fall * s * 0.6f) % 1f) * size.height
         val xx = x * size.width + sin((yy / size.height * 6 + k).toDouble()).toFloat() * 20f
@@ -341,9 +344,7 @@ fun IdleCat(touches: Int, active: Boolean, idleMs: Long = 15_000) {
         }
 
         if (visible) {
-            val dpX = with(density) { cx.toDp() }
-            val dpY = with(density) { cy.toDp() }
-            Box(Modifier.offset(dpX, dpY).size(46.dp)) {
+            Box(Modifier.offset { IntOffset(cx.toInt(), cy.toInt()) }.size(46.dp)) {
                 Text(
                     "🐈", fontSize = 38.sp,
                     modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer {

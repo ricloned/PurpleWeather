@@ -288,7 +288,7 @@ private fun CityPage(vm: WeatherViewModel, c: City, f: Forecast?) {
                         preview = null
                     }
                 },
-                parallax = tilt.value, floor = true, cat = vm.cat
+                parallax = tilt, floor = true, cat = vm.cat
             )
         }
         // температура «набегает» от нуля
@@ -718,7 +718,7 @@ private fun DayScreen(vm: WeatherViewModel, c: City, f: Forecast) {
             if (d == null) { T("Нет данных", 16.sp, P.dim); return@Column }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.appear(0, idx)) {
-                WeatherIcon3D(Wmo.sky(d.code), true, Modifier.size(150.dp), parallax = tilt.value, floor = true, cat = vm.cat)
+                WeatherIcon3D(Wmo.sky(d.code), true, Modifier.size(150.dp), parallax = tilt, floor = true, cat = vm.cat)
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text3D(vm.t(d.max), 56.sp)
