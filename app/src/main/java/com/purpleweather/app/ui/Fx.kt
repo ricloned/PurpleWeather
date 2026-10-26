@@ -8,6 +8,26 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,7 +102,7 @@ fun phrase(sky: Sky, temp: Double, seed: Int): String {
 
 /** Фон: градиент темы, «туманности», объёмные сферы (каждый запуск — другие), звёзды, сезонные сюрпризы. */
 @Composable
-fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean) {
+fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean, falling: Boolean = true) {
     val tr = rememberInfiniteTransition(label = "bg")
     val a by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(18000, easing = LinearEasing), RepeatMode.Reverse), label = "a")
     val slow by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(40000, easing = LinearEasing)), label = "slow")
@@ -121,13 +141,14 @@ fun Backdrop(sky: Sky, day: Boolean, seed: Int, snowFx: Boolean) {
                 Offset(x * size.width + px * 0.5f, y * size.height + py * 0.5f))
         }
         for (o in orbs) orb(o, slow, px, py)
-        when (season) {
+        if (falling) when (season) {
             Season.HALLOWEEN -> emojiRain(listOf("🎃", "🦇", "👻"), flakes, fall, 26f)
             Season.VALENTINE -> emojiRain(listOf("💜", "💖", "💘"), flakes, fall, 22f)
-            Season.NEW_YEAR -> { snowfall(flakes, fall, px); garland(slow) }
+            Season.NEW_YEAR -> snowfall(flakes, fall, px)
             Season.NONE -> {}
         }
-        if (snowFx && season != Season.NEW_YEAR) snowfall(flakes, fall, px)
+        if (season == Season.NEW_YEAR) garland(slow)
+        if (falling && snowFx && season != Season.NEW_YEAR) snowfall(flakes, fall, px)
     }
 }
 
@@ -224,6 +245,121 @@ fun Confetti(trigger: Int) {
             if (y > size.height) continue
             rotate(p[4] + el * 300f * p[3], Offset(x, y)) {
                 drawRect(colors[p[5].toInt()], topLeft = Offset(x - 6f, y - 10f), size = Size(12f, 20f), alpha = (1f - el / 3.1f).coerceIn(0f, 1f))
+            }
+        }
+    }
+}
+
+
+/**
+ * Котик от бездействия: если ничего не трогать [idleMs], выходит из-за края экрана
+ * и прыгает по панелям. Любое касание ([touches] меняется) — убегает.
+ */
+@Composable
+fun IdleCat(touches: Int, active: Boolean, idleMs: Long = 15_000) {
+    var visible by remember { mutableStateOf(false) }
+    var cx by remember { mutableFloatStateOf(0f) }
+    var cy by remember { mutableFloatStateOf(0f) }
+    var faceRight by remember { mutableStateOf(true) }
+    var squash by remember { mutableFloatStateOf(1f) }
+    var bubble by remember { mutableStateOf<String?>(null) }
+    val prog = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    val cat = with(density) { 46.dp.toPx() }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val w = constraints.maxWidth.toFloat()
+        val h = constraints.maxHeight.toFloat()
+
+        suspend fun hop(tx: Float, ty: Float, fast: Boolean = false) {
+            val sx = cx; val sy = cy
+            faceRight = tx >= sx
+            val dist = kotlin.math.hypot(tx - sx, ty - sy)
+            val arc = cat * 0.8f + dist * 0.25f
+            // присел перед прыжком
+            squash = 0.75f; delay(if (fast) 40 else 140); squash = 1.15f
+            prog.snapTo(0f)
+            prog.animateTo(1f, tween(((if (fast) 280 else 420) + dist * 0.35f).toInt(), easing = LinearEasing)) {
+                val v = value
+                cx = sx + (tx - sx) * v
+                cy = sy + (ty - sy) * v - arc * 4f * v * (1f - v)
+            }
+            // приземлился
+            squash = 0.7f; delay(90); squash = 1f
+        }
+
+        suspend fun walk(tx: Float) {
+            val sx = cx
+            faceRight = tx >= sx
+            prog.snapTo(0f)
+            prog.animateTo(1f, tween((kotlin.math.abs(tx - sx) * 3f).toInt().coerceAtLeast(200), easing = LinearEasing)) {
+                cx = sx + (tx - sx) * value
+                squash = 1f + 0.06f * sin(value * 40f)
+            }
+            squash = 1f
+        }
+
+        LaunchedEffect(touches, active) {
+            bubble = null
+            if (visible) {
+                // испугался — убегает за ближний край
+                bubble = "!"
+                hop(if (cx < w / 2) -cat * 2 else w + cat, cy - cat, fast = true)
+                visible = false
+                bubble = null
+            }
+            if (!active) return@LaunchedEffect
+            delay(idleMs)
+            val r = Random(System.nanoTime())
+            val fromLeft = r.nextBoolean()
+            cx = if (fromLeft) -cat else w
+            cy = h * (0.35f + r.nextFloat() * 0.3f)
+            visible = true
+            var last: Rect? = null
+            while (true) {
+                val blocks = Blocks.rects.values.filter {
+                    it.width > cat * 1.6f && it.height > cat * 0.6f && it.top > cat * 1.5f && it.top < h - cat && it.left >= -1f && it.right <= w + 1f
+                }
+                if (blocks.isEmpty()) {
+                    // панелей нет — просто гуляет по низу экрана
+                    walk(r.nextFloat() * (w - cat)); delay(1500); continue
+                }
+                val b = blocks.filter { it != last }.randomOrNull(r) ?: blocks.random(r)
+                last = b
+                hop(b.left + r.nextFloat() * (b.width - cat), b.top - cat * 0.9f)
+                // немного занимается своими делами на панели
+                repeat(r.nextInt(1, 3)) {
+                    when (r.nextInt(5)) {
+                        0 -> { bubble = "мяу"; delay(1400); bubble = null }
+                        1 -> { bubble = "💤"; delay(2600); bubble = null }
+                        2 -> walk(b.left + r.nextFloat() * (b.width - cat))
+                        3 -> { bubble = "💜"; delay(1200); bubble = null }
+                        else -> delay(1500)
+                    }
+                }
+                delay(400L + r.nextInt(1200))
+            }
+        }
+
+        if (visible) {
+            val dpX = with(density) { cx.toDp() }
+            val dpY = with(density) { cy.toDp() }
+            Box(Modifier.offset(dpX, dpY).size(46.dp)) {
+                Text(
+                    "🐈", fontSize = 38.sp,
+                    modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer {
+                        // эмодзи кота смотрит влево — зеркалим, когда идёт вправо
+                        scaleX = if (faceRight) -1f / squash.coerceAtLeast(0.6f) * 1f else 1f / squash.coerceAtLeast(0.6f)
+                        scaleY = squash
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    }
+                )
+                val bb = bubble
+                if (bb != null) {
+                    Box(
+                        Modifier.align(Alignment.TopCenter).offset(y = (-22).dp).clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.9f)).padding(horizontal = 6.dp, vertical = 1.dp)
+                    ) { Text(bb, fontSize = 11.sp, color = Color(0xFF3A1680)) }
+                }
             }
         }
     }

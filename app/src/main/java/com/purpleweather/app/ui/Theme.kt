@@ -20,6 +20,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -87,6 +92,22 @@ object Palettes {
 }
 
 /** Текущая тема — обычное состояние Compose: смена темы перерисовывает всё. */
+/** Плотность стеклянных панелей (0..1), меняется в настройках. */
+object GlassStyle {
+    val opacity = mutableFloatStateOf(0.5f)
+}
+
+/** Где на экране сейчас лежат панели — по ним прыгает котик. */
+object Blocks {
+    val rects = mutableStateMapOf<Any, Rect>()
+}
+
+fun Modifier.catBlock(): Modifier = composed {
+    val key = remember { Any() }
+    DisposableEffect(key) { onDispose { Blocks.rects.remove(key) } }
+    onGloballyPositioned { Blocks.rects[key] = it.boundsInRoot() }
+}
+
 object Pal {
     val state = mutableStateOf(Palettes.VIOLET)
     val value: Palette get() = state.value
@@ -202,6 +223,7 @@ fun Glass(
     val shape = RoundedCornerShape(corner)
     Box(
         modifier
+            .catBlock()
             .graphicsLayer {
                 val t = tilt.value
                 rotationY = t.x * 6f * depth
@@ -229,7 +251,14 @@ fun Glass(
                 }
             }
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(Color(0x40FFFFFF), Color(0x1AFFFFFF), Color(0x26FFFFFF))))
+            .drawBehind {
+                // 0..0.5 — стекло становится заметнее, 0.5..1 — добавляется плотная подложка темы
+                val o = GlassStyle.opacity.floatValue
+                val k = (o * 2f).coerceAtMost(1f)
+                val solid = ((o - 0.5f) * 2f).coerceIn(0f, 1f) * 0.92f
+                if (solid > 0f) drawRect(Brush.verticalGradient(listOf(P.night1.copy(alpha = solid), P.night0.copy(alpha = solid))))
+                drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.25f * k), Color.White.copy(alpha = 0.10f * k), Color.White.copy(alpha = 0.15f * k))))
+            }
             .drawBehind {
                 // блик по верхнему краю
                 drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.18f), Color.Transparent), endY = size.height * 0.35f))

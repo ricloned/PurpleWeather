@@ -45,6 +45,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -121,8 +127,17 @@ fun WeatherApp(vm: WeatherViewModel) {
     CompositionLocalProvider(LocalTilt provides tilt) {
         val cur = vm.cities.getOrNull(vm.page)
         val f = cur?.let { vm.forecasts[it.id] }
-        Box(Modifier.fillMaxSize().background(P.night0)) {
-            Backdrop(f?.let { Wmo.sky(it.current.code) } ?: Sky.CLOUDY, f?.current?.isDay ?: true, vm.seed, vm.snowFx)
+        var touches by remember { mutableIntStateOf(0) }
+        Box(Modifier.fillMaxSize().background(P.night0).pointerInput(Unit) {
+            // любое касание сбрасывает таймер бездействия (событие не перехватываем)
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(PointerEventPass.Initial)
+                    if (e.type == PointerEventType.Press) touches++
+                }
+            }
+        }) {
+            Backdrop(f?.let { Wmo.sky(it.current.code) } ?: Sky.CLOUDY, f?.current?.isDay ?: true, vm.seed, vm.snowFx, vm.fallingFx)
             when (vm.screen) {
                 Screen.MAIN -> MainScreen(vm)
                 Screen.SEARCH -> SearchScreen(vm)
@@ -130,6 +145,7 @@ fun WeatherApp(vm: WeatherViewModel) {
                 Screen.DAY -> if (cur != null && f != null) DayScreen(vm, cur, f) else LaunchedEffect(Unit) { vm.screen = Screen.MAIN }
             }
             if (vm.screen == Screen.MAIN) UpdateBanner(vm)
+            IdleCat(touches + vm.screen.ordinal * 1000 + vm.page * 100000, vm.idleCat && vm.screen == Screen.MAIN)
             Confetti(vm.confetti)
             val msg = vm.message
             LaunchedEffect(msg) {
@@ -594,6 +610,17 @@ private fun SettingsScreen(vm: WeatherViewModel) {
         Spacer(Modifier.height(14.dp))
         Glass(Modifier.fillMaxWidth()) {
             Column {
+                T("ПРОЗРАЧНОСТЬ ПАНЕЛЕЙ · ${(100 - vm.panelAlpha * 100).roundToInt()}%", 12.sp, P.dim, weight = FontWeight.Bold)
+                Slider(
+                    value = vm.panelAlpha, onValueChange = { vm.changePanelAlpha(it) }, valueRange = 0f..1f,
+                    colors = SliderDefaults.colors(thumbColor = P.pink, activeTrackColor = P.orchid, inactiveTrackColor = Color(0x33FFFFFF))
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    T("прозрачные", 11.sp, P.dim); T("плотные", 11.sp, P.dim)
+                }
+                Spacer(Modifier.height(8.dp))
+                Toggle("Падающие эмодзи и снег", vm.fallingFx, "тыквы, сердечки, снежинки на фоне") { vm.changeFallingFx(it) }
+                Toggle("Котик при бездействии", vm.idleCat, "если ничего не трогать 15 секунд, приходит котик и прыгает по панелям") { vm.changeIdleCat(it) }
                 Toggle("Градусы Фаренгейта", vm.fahrenheit, "°F вместо °C") { vm.changeFahrenheit(it) }
                 Toggle("3D-наклон", vm.tilt, "карточки и иконки поворачиваются вслед за телефоном") { vm.setTiltOn(it) }
                 Toggle("Проверять обновления", vm.autoUpdate, "при запуске смотреть новый релиз на GitHub") { vm.setAutoUpdateOn(it) }

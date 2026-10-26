@@ -292,6 +292,24 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
     fun setTiltOn(v: Boolean) { tilt = v; sp.edit().putBoolean("tilt", v).apply() }
     fun setAutoUpdateOn(v: Boolean) { autoUpdate = v; sp.edit().putBoolean("autoUpdate", v).apply() }
 
+    /** Плотность панелей: 0 — полностью прозрачные, 1 — почти непрозрачные. */
+    var panelAlpha by mutableStateOf(sp.getFloat("panelAlpha", 0.5f))
+        private set
+    /** Падающие эмодзи и снег на фоне. */
+    var fallingFx by mutableStateOf(sp.getBoolean("fallingFx", true))
+        private set
+    /** Котик, который приходит, если долго ничего не трогать. */
+    var idleCat by mutableStateOf(sp.getBoolean("idleCat", true))
+        private set
+
+    fun changePanelAlpha(v: Float) {
+        panelAlpha = v
+        com.purpleweather.app.ui.GlassStyle.opacity.floatValue = v
+        sp.edit().putFloat("panelAlpha", v).apply()
+    }
+    fun changeFallingFx(v: Boolean) { fallingFx = v; sp.edit().putBoolean("fallingFx", v).apply() }
+    fun changeIdleCat(v: Boolean) { idleCat = v; sp.edit().putBoolean("idleCat", v).apply() }
+
     fun t(c: Double): String {
         if (c.isNaN()) return "—"
         val v = if (fahrenheit) c * 9 / 5 + 32 else c
@@ -349,6 +367,7 @@ class WeatherViewModel(app: Application) : AndroidViewModel(app) {
 
     // init в конце: к этому моменту все поля уже созданы
     init {
+        com.purpleweather.app.ui.GlassStyle.opacity.floatValue = panelAlpha
         applyTheme()
         cities.forEach { c -> loadCached(c); refresh(c, force = false) }
         if (autoUpdate) checkUpdate(silent = true)
